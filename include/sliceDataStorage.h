@@ -325,6 +325,8 @@ public:
 
     std::shared_ptr<LightningGenerator> lightning_generator; //!< Pre-computed structure for Lightning type infill
 
+    std::vector<OpenLinesSet> crosshatch_roof_support; //!< Additional roof branches per layer, printed after the base infill.
+
     RetractionAndWipeConfig retraction_wipe_config; //!< Per-Object retraction and wipe settings.
 
     /*!

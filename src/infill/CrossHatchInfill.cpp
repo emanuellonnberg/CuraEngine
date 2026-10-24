@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 #include "geometry/OpenLinesSet.h"
+#include "geometry/PointMatrix.h"
 #include "geometry/Shape.h"
 #include "utils/AABB.h"
 #include "utils/OpenPolylineStitcher.h"
@@ -40,11 +42,11 @@ void CrossHatchInfill::generateInfill(
     OpenPolylineStitcher::stitch(clipped_lines, result_polylines, result_polygons, 1);
 }
 
-OpenLinesSet CrossHatchInfill::generateParallelLines(const coord_t line_distance, const AABB& bounding_box, const coord_t z, const coord_t line_width) const
+coord_t CrossHatchInfill::getLineSpacing(const coord_t line_distance, const coord_t line_width)
 {
     if (line_distance <= 0 || line_width <= 0)
     {
-        return {};
+        return 0;
     }
 
     const double density = std::clamp(static_cast<double>(line_width) / line_distance, 0.0, 1.0);
@@ -58,7 +60,60 @@ OpenLinesSet CrossHatchInfill::generateParallelLines(const coord_t line_distance
     // cycle, so the continuous transition preserves the requested density.
     const double mean_transition_length = 0.75 + std::asinh(1.0) / (2.0 * std::sqrt(2.0));
     const double spacing_factor = (repeat_ratio + transition_ratio * mean_transition_length) / (repeat_ratio + transition_ratio);
-    const coord_t spacing = std::max(line_width, static_cast<coord_t>(std::llrint(line_distance * spacing_factor)));
+    return std::max(line_width, static_cast<coord_t>(std::llrint(line_distance * spacing_factor)));
+}
+
+Shape CrossHatchInfill::generateAnchorRegions(const coord_t line_distance, const Shape& in_outline, const coord_t line_width, const AngleDegrees& rotation)
+{
+    const coord_t spacing = getLineSpacing(line_distance, line_width);
+    if (spacing <= 0 || in_outline.empty())
+    {
+        return {};
+    }
+    Shape rotated = in_outline;
+    const PointMatrix matrix(rotation);
+    rotated.applyMatrix(matrix);
+    const AABB bounds(rotated);
+    const coord_t first_x = static_cast<coord_t>(std::floor(static_cast<double>(bounds.min_.X) / spacing)) - 1;
+    const coord_t first_y = static_cast<coord_t>(std::floor(static_cast<double>(bounds.min_.Y) / spacing)) - 1;
+    const coord_t last_x = static_cast<coord_t>(std::ceil(static_cast<double>(bounds.max_.X) / spacing)) + 1;
+    const coord_t last_y = static_cast<coord_t>(std::ceil(static_cast<double>(bounds.max_.Y) / spacing)) + 1;
+    const coord_t radius = std::max(coord_t{ 1 }, line_width / 4);
+    Shape anchors;
+    for (coord_t row = first_y; row <= last_y; ++row)
+    {
+        for (coord_t column = first_x; column <= last_x; ++column)
+        {
+            if ((row + column) % 2 == 0)
+            {
+                continue;
+            }
+            Polygon anchor;
+            for (int point = 0; point < 16; ++point)
+            {
+                const double angle = point * 2.0 * std::numbers::pi / 16;
+                anchor.push_back(Point2LL(column * spacing + std::llrint(radius * std::cos(angle)), row * spacing + std::llrint(radius * std::sin(angle))));
+            }
+            anchors.push_back(std::move(anchor));
+        }
+    }
+    anchors = anchors.intersection(rotated);
+    anchors.applyMatrix(matrix.inverse());
+    // A line clipped at an island edge may end before the anchor centre.
+    // Boundary-adjacent support can ground directly on the wall instead.
+    return anchors.intersection(in_outline.offset(-line_width));
+}
+
+OpenLinesSet CrossHatchInfill::generateParallelLines(const coord_t line_distance, const AABB& bounding_box, const coord_t z, const coord_t line_width) const
+{
+    const coord_t spacing = getLineSpacing(line_distance, line_width);
+    if (spacing <= 0)
+    {
+        return {};
+    }
+    const double density = std::clamp(static_cast<double>(line_width) / line_distance, 0.0, 1.0);
+    const double repeat_ratio = density < 0.3 ? std::clamp(1.0 - std::exp(-5.0 * density), 0.2, 1.0) : 1.0;
+    constexpr double transition_ratio = 0.8;
     const double repeat_height = spacing * repeat_ratio;
     const double transition_height = spacing * transition_ratio;
     const double half_period = repeat_height + transition_height;

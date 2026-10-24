@@ -8,6 +8,7 @@ set(TESTS_SRC_BASE
         AntiOozeAmountsTest
         ClipperTest
         CrossHatchInfillTest
+        CrossHatchRoofSupportTest
         ExtruderPlanTest
         FffGcodeWriterTest
         GCodeExportTest
