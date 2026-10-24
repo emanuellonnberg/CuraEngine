@@ -116,6 +116,7 @@ set(engine_SRCS # Except main.cpp.
         src/communication/Listener.cpp
 
         src/infill/AbstractLinesInfill.cpp
+        src/infill/CrossHatchInfill.cpp
         src/infill/ImageBasedDensityProvider.cpp
         src/infill/NoZigZagConnectorProcessor.cpp
         src/infill/ZigzagConnectorProcessor.cpp
