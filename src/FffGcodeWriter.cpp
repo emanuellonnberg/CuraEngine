@@ -32,6 +32,7 @@
 #include "geometry/OpenPolyline.h"
 #include "geometry/PointMatrix.h"
 #include "infill.h"
+#include "infill/CrossHatchRoofSupport.h"
 #include "progress/Progress.h"
 #include "raft.h"
 #include "utils/Simplify.h" //Removing micro-segments created by offsetting.
@@ -488,6 +489,7 @@ void FffGcodeWriter::setInfillAndSkinAngles(SliceMeshStorage& mesh)
             mesh.skin_angles.push_back(135);
         }
     }
+    CrossHatchRoofSupport::generateForMesh(mesh);
 }
 
 void FffGcodeWriter::setSupportAngles(SliceDataStorage& storage)
@@ -2193,7 +2195,7 @@ bool FffGcodeWriter::processSingleLayerInfill(
     Shape infill_not_below_skin;
     Shape infill_sandwiched;
     AngleDegrees skin_support_angle;
-    if (gcode_layer.getLayerNr() > 0)
+    if (gcode_layer.getLayerNr() > 0 && ! CrossHatchRoofSupport::isEnabled(mesh.settings))
     {
         partitionInfillBySkinAbove(infill_below_skin, infill_not_below_skin, infill_sandwiched, gcode_layer, mesh, part, infill_line_width);
     }
@@ -2418,7 +2420,7 @@ bool FffGcodeWriter::processSingleLayerInfill(
 
     optimizer.optimize(skin_support_interlace_lines, near_end_location);
 
-    const bool added_something = optimizer.addToLayer(
+    bool added_something = optimizer.addToLayer(
         gcode_layer,
         mesh.settings,
         near_end_location,
@@ -2433,6 +2435,21 @@ bool FffGcodeWriter::processSingleLayerInfill(
         skin_support_line_distance,
         infill_below_skin,
         skin_support_angle);
+
+    const auto layer_nr = static_cast<size_t>(gcode_layer.getLayerNr());
+    if (layer_nr < mesh.crosshatch_roof_support.size())
+    {
+        const OpenLinesSet roof_lines = part.getOwnInfillArea().intersection(mesh.crosshatch_roof_support[layer_nr], false, 0, false);
+        if (! roof_lines.empty())
+        {
+            // The base paths must already be printed before their branches.
+            gcode_layer.addLinesByOptimizer(roof_lines, mesh_config.skin_support_config, SpaceFillType::PolyLines);
+            MixedLinesSet generated;
+            generated.push_back(roof_lines);
+            gcode_layer.setGeneratedInfillLines(&mesh, generated);
+            added_something = true;
+        }
+    }
 
     return added_something;
 }

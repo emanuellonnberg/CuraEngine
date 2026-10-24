@@ -22,6 +22,11 @@ namespace cura
 class CrossHatchInfill : public AbstractLinesInfill
 {
 public:
+    static coord_t getLineSpacing(coord_t line_distance, coord_t line_width);
+
+    /*! Small regions around the lattice points shared by all pattern phases. */
+    static Shape generateAnchorRegions(coord_t line_distance, const Shape& in_outline, coord_t line_width, const AngleDegrees& rotation);
+
     CrossHatchInfill()
         : AbstractLinesInfill(1)
     {
